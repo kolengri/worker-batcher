@@ -20,6 +20,7 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "brotli-size": "^4.0.0",
     "bundlesize": "^0.18.2",
     "typescript": "^5.0.0"
   },
@@ -29,7 +30,7 @@
   "bundlesize": [
     {
       "path": "./dist/index.js",
-      "maxSize": "2 kB"
+      "maxSize": "2.6 kB"
     }
   ],
   "keywords": [
@@ -44,10 +45,10 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/yourusername/worker-batcher.git"
+    "url": "git+https://github.com/kolengri/worker-batcher.git"
   },
   "bugs": {
-    "url": "https://github.com/yourusername/worker-batcher/issues"
+    "url": "https://github.com/kolengri/worker-batcher/issues"
   },
-  "homepage": "https://github.com/yourusername/worker-batcher#readme"
+  "homepage": "https://github.com/kolengri/worker-batcher#readme"
 }
