@@ -129,7 +129,6 @@ This package includes TypeScript type definitions. No additional @types package 
 ```typescript
 import { workerBatcher, BatchOptions } from 'worker-batcher';
 
-// Типы автоматически доступны
 const options: BatchOptions<number, number> = {
   batchSize: 2,
   concurrency: 3
