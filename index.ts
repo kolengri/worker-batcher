@@ -13,6 +13,14 @@ interface BatchOptions<T, R> {
   signal?: AbortSignal;
 }
 
+/**
+ * Error class for batch processing failures
+ * Contains additional context about the failed batch
+ * 
+ * @property batch - The batch of items that failed to process
+ * @property batchIndex - Index of the failed batch
+ * @property originalError - The original error that caused the failure
+ */
 export class BatchProcessingError extends Error {
   constructor(
     message: string,
@@ -26,12 +34,55 @@ export class BatchProcessingError extends Error {
 }
 
 /**
- * Processes an array in batches with controlled concurrency using a worker pool pattern.
- *
- * @param items Array of items to process
- * @param processor Async callback function to process each batch of items
- * @param options Configuration options for batch processing
- * @returns Promise that resolves with processed results and any errors
+ * Processes an array of items in batches with controlled concurrency using a worker pool pattern.
+ * 
+ * How it works:
+ * 1. Input array is split into smaller batches of specified size
+ * 2. Creates a pool of workers up to the concurrency limit
+ * 3. Each worker processes one batch at a time asynchronously
+ * 4. When a worker finishes, it takes the next batch from the queue
+ * 5. Maintains a constant number of active workers throughout processing
+ * 6. Collects results from all successful batches into a single array
+ * 7. Collects any errors that occur during processing
+ * 8. Reports progress and batch status through callbacks
+ * 
+ * @example
+ * ```typescript
+ * const items = [1, 2, 3, 4, 5, 6];
+ * const { results, errors } = await workerBatcher(
+ *   items,
+ *   async (batch) => {
+ *     return batch.map(x => x * 2);
+ *   },
+ *   {
+ *     batchSize: 2,
+ *     concurrency: 3,
+ *     onProgress: ({ percent }) => console.log(`Progress: ${percent}%`)
+ *   }
+ * );
+ * ```
+ * 
+ * @param items - Array of items to process
+ * @param processor - Async function that processes each batch of items
+ *                   Takes an array of items and returns a promise of processed results
+ * @param options - Configuration options for batch processing
+ * 
+ * @param options.batchSize - Number of items to process in one batch (default: 10)
+ * @param options.concurrency - Maximum number of concurrent batch operations (default: 5)
+ * @param options.signal - AbortSignal for cancelling the operation
+ * @param options.onBatchSuccess - Callback function called after each successful batch
+ *                                Receives: processed results, original batch items, and batch index
+ * @param options.onBatchError - Callback function called when a batch fails
+ *                              Receives: error object, failed batch items, and batch index
+ * @param options.onProgress - Callback function for tracking overall progress
+ *                            Receives: { completed, total, percent }
+ * 
+ * @returns Promise resolving to an object containing:
+ *          - results: Array of all successfully processed items
+ *          - errors: Array of BatchProcessingError objects for failed batches
+ * 
+ * @throws Error if the operation is aborted via AbortSignal
+ * @throws BatchProcessingError for individual batch failures (collected in errors array)
  */
 export async function workerBatcher<T, R>(
   items: T[],
