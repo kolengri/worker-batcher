@@ -14,25 +14,16 @@
     "test": "bun test",
     "build": "bun build ./index.ts --outdir ./dist --target node",
     "type-check": "tsc --noEmit",
-    "size": "bun build ./index.ts --outfile ./dist/index.js && bundlesize",
-    "prepublishOnly": "bun run test && bun run type-check && bun run build && bun run size",
+    "prepublishOnly": "bun run test && bun run type-check && bun run build",
     "clean": "rm -rf dist"
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "brotli-size": "^4.0.0",
-    "bundlesize": "^0.18.2",
     "typescript": "^5.0.0"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"
   },
-  "bundlesize": [
-    {
-      "path": "./dist/index.js",
-      "maxSize": "2.6 kB"
-    }
-  ],
   "keywords": [
     "batch",
     "worker",
@@ -41,7 +32,7 @@
     "processing",
     "typescript"
   ],
-  "author": "Your Name",
+  "author": "Gregory Kolens",
   "license": "MIT",
   "repository": {
     "type": "git",

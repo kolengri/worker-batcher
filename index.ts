@@ -1,3 +1,4 @@
+
 const isEmptyArray = (array: unknown[]) => array.length === 0;
 
 interface BatchOptions<T, R> {
