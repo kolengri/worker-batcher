@@ -160,27 +160,23 @@ describe('workerBatcher', () => {
     });
 
     test('should abort processing when signal is aborted', async () => {
-        const items = Array.from({ length: 100 }, (_, i) => i); // Больше элементов
+        const items = Array.from({ length: 100 }, (_, i) => i); 
         const controller = new AbortController();
         const processor = mock(async (batch: number[]) => {
-            await new Promise(resolve => setTimeout(resolve, 50)); // Увеличим задержку
+            await new Promise(resolve => setTimeout(resolve, 50))
             return batch;
         });
 
-        // Запускаем обработку
         const promise = workerBatcher(items, processor, {
             batchSize: 2,
             concurrency: 2,
             signal: controller.signal
         });
 
-        // Даем немного времени для начала обработки
         await new Promise(resolve => setTimeout(resolve, 10));
         
-        // Отменяем операцию
         controller.abort();
 
-        // Проверяем, что промис был отклонен с правильной ошибкой
         await expect(promise).rejects.toThrow('Operation was aborted');
     });
 
