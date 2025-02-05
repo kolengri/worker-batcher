@@ -2,13 +2,52 @@
   "name": "worker-batcher",
   "module": "index.ts",
   "type": "module",
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "bun test",
+    "build": "bun build ./index.ts --outdir ./dist --target node",
+    "type-check": "tsc --noEmit",
+    "size": "bun build ./index.ts --outfile ./dist/index.js && bundlesize",
+    "prepublishOnly": "bun run test && bun run type-check && bun run build && bun run size",
+    "clean": "rm -rf dist"
+  },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "bundlesize": "^0.18.2",
+    "typescript": "^5.0.0"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"
   },
-  "scripts": {
-    "test": "bun test"
-  }
+  "bundlesize": [
+    {
+      "path": "./dist/index.js",
+      "maxSize": "2 kB"
+    }
+  ],
+  "keywords": [
+    "batch",
+    "worker",
+    "concurrent",
+    "parallel",
+    "processing",
+    "typescript"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yourusername/worker-batcher.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/worker-batcher/issues"
+  },
+  "homepage": "https://github.com/yourusername/worker-batcher#readme"
 }

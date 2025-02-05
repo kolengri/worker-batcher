@@ -184,6 +184,38 @@ bun install
 
 # Run tests
 bun test
+
+# Type checking
+bun run type-check
+
+# Build package
+bun run build
+
+# Check bundle size
+bun run size
+
+# Clean build artifacts
+bun run clean
+
+# Prepare for publishing (runs tests, type check, build and size check)
+bun run prepublishOnly
+```
+
+## Publishing
+
+Before publishing, make sure to:
+
+1. Update version in package.json
+2. Run prepublishOnly script to ensure everything is working
+3. Create git tag for the version
+
+```bash
+# Update version
+bun version patch # or minor, or major
+
+# Prepare and publish
+bun run prepublishOnly
+bun publish
 ```
 
 ## License
