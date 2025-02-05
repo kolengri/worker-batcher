@@ -191,9 +191,6 @@ bun run type-check
 # Build package
 bun run build
 
-# Check bundle size
-bun run size
-
 # Clean build artifacts
 bun run clean
 
