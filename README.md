@@ -1,5 +1,15 @@
 # Worker Batcher
 
+[![NPM](https://img.shields.io/npm/v/worker-batcher.svg)](https://www.npmjs.com/package/worker-batcher)
+[![JavaScript Style Guide](https://img.shields.io/badge/code_style-standard-brightgreen.svg)](https://standardjs.com)
+[![Badges](https://badgen.net/npm/license/worker-batcher)](https://www.npmjs.com/package/worker-batcher)
+[![Badges](https://badgen.net/npm/dependents/worker-batcher)](https://www.npmjs.com/package/worker-batcher)
+[![Badges](https://badgen.net/npm/types/worker-batcher)](https://www.npmjs.com/package/worker-batcher)
+[![Badges](https://badgen.net/github/issues/kolengri/worker-batcher)](https://www.npmjs.com/package/worker-batcher)
+[![Badges](https://badgen.net/bundlephobia/min/worker-batcher)](https://bundlephobia.com/result?p=worker-batcher)
+[![Badges](https://badgen.net/bundlephobia/minzip/worker-batcher)](https://bundlephobia.com/result?p=worker-batcher)
+
+
 A powerful utility for parallel array processing with controlled concurrency and batch size.
 
 ## Features
