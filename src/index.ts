@@ -1,6 +1,4 @@
 
-const isEmptyArray = (array: unknown[]) => array.length === 0;
-
 interface BatchOptions<T, R> {
   batchSize?: number;
   concurrency?: number;
@@ -99,7 +97,7 @@ export async function workerBatcher<T, R>(
     signal
   } = options;
 
-  if (isEmptyArray(items) || !Array.isArray(items)) {
+  if (!Array.isArray(items) || items?.length === 0) {
     return { results: [], errors: [] };
   }
 
