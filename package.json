@@ -12,10 +12,12 @@
   ],
   "scripts": {
     "test": "bun test",
-    "build": "bun build ./index.ts --outdir ./dist --target node",
+    "build": "bun build ./src/index.ts --outdir ./dist --target node && bun run build:types",
+    "build:types": "bun run typegen",
     "type-check": "tsc --noEmit",
     "prepublishOnly": "bun run test && bun run type-check && bun run build",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "typegen": "tsc --emitDeclarationOnly --declaration --outDir dist"
   },
   "devDependencies": {
     "@types/bun": "latest",

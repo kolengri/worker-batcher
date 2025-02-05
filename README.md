@@ -122,6 +122,26 @@ try {
 controller.abort();
 ```
 
+## TypeScript Support
+
+This package includes TypeScript type definitions. No additional @types package is required.
+
+```typescript
+import { workerBatcher, BatchOptions } from 'worker-batcher';
+
+// Типы автоматически доступны
+const options: BatchOptions<number, number> = {
+  batchSize: 2,
+  concurrency: 3
+};
+
+const { results, errors } = await workerBatcher(
+  [1, 2, 3],
+  async (batch) => batch.map(x => x * 2),
+  options
+);
+```
+
 ## API Reference
 
 ### workerBatcher<T, R>(items, processor, options)
