@@ -140,7 +140,7 @@ class BatchProcessor<T, R> {
         this.checkAbort(currentBatchIndex);
       }
     } catch (error) {
-      this.handleBatchError(error, [], currentBatchIndex);
+      this.handleBatchError(error, this.batches[currentBatchIndex], currentBatchIndex);
     }
 
     return { results: this.results, errors: this.errors };
