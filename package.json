@@ -17,11 +17,14 @@
     "type-check": "tsc --noEmit",
     "prepublishOnly": "bun run test && bun run type-check && bun run build",
     "clean": "rm -rf dist",
-    "typegen": "tsc --emitDeclarationOnly --declaration --outDir dist"
+    "typegen": "tsc --emitDeclarationOnly --declaration --outDir dist",
+    "format": "prettier --write \"src/**/*.{js,jsx,ts,tsx,json,md}\"",
+    "format:check": "prettier --check \"src/**/*.{js,jsx,ts,tsx,json,md}\""
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "prettier": "^3.4.2"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"
