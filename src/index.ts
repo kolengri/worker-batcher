@@ -110,7 +110,7 @@ class BatchProcessor<T, R> {
   }
 
   public async process(): Promise<{ results: R[]; errors: BatchProcessingError[] }> {
-    const { concurrency = 5, signal } = this.options;
+    const { concurrency = 5 } = this.options;
 
     let currentBatchIndex = 0;
     try {
