@@ -1,4 +1,3 @@
-
 interface BatchOptions<T, R> {
   batchSize?: number;
   concurrency?: number;
@@ -60,9 +59,12 @@ export class BatchAbortError extends BatchProcessingError {
  * 6. Collects results from all successful batches into a single array
  * 7. Collects any errors that occur during processing
  * 8. Reports progress and batch status through callbacks
+ * 9. In case of abort signal, allows current batches to complete and returns partial results
  * 
  * @example
  * ```typescript
+ * const controller = new AbortController();
+ * 
  * const items = [1, 2, 3, 4, 5, 6];
  * const { results, errors } = await workerBatcher(
  *   items,
@@ -72,9 +74,14 @@ export class BatchAbortError extends BatchProcessingError {
  *   {
  *     batchSize: 2,
  *     concurrency: 3,
+ *     signal: controller.signal,
  *     onProgress: ({ percent }) => console.log(`Progress: ${percent}%`)
  *   }
  * );
+ * 
+ * // Abort processing after some condition
+ * controller.abort();
+ * // Function will return partial results and include BatchAbortError in errors array
  * ```
  * 
  * @param items - Array of items to process
@@ -84,7 +91,9 @@ export class BatchAbortError extends BatchProcessingError {
  * 
  * @param options.batchSize - Number of items to process in one batch (default: 10)
  * @param options.concurrency - Maximum number of concurrent batch operations (default: 5)
- * @param options.signal - AbortSignal for cancelling the operation
+ * @param options.signal - AbortSignal for gracefully stopping new batch processing
+ *                        When aborted, current batches will complete and function will
+ *                        return partial results with BatchAbortError for remaining items
  * @param options.onBatchSuccess - Callback function called after each successful batch
  *                                Receives: processed results, original batch items, and batch index
  * @param options.onBatchError - Callback function called when a batch fails
@@ -93,11 +102,12 @@ export class BatchAbortError extends BatchProcessingError {
  *                            Receives: { completed, total, percent }
  * 
  * @returns Promise resolving to an object containing:
- *          - results: Array of all successfully processed items
- *          - errors: Array of BatchProcessingError objects for failed batches
+ *          - results: Array of all successfully processed items (including partial results if aborted)
+ *          - errors: Array of BatchProcessingError objects for failed batches and remaining items if aborted
  * 
- * @throws BatchAbortError if the operation is aborted via AbortSignal
  * @throws BatchProcessingError for individual batch failures (collected in errors array)
+ * @note When aborted via signal, a BatchAbortError will be added to the errors array for remaining unprocessed items,
+ *       but the function will still return with partial results from completed batches
  */
 export async function workerBatcher<T, R>(
   items: T[],
@@ -115,10 +125,6 @@ export async function workerBatcher<T, R>(
 
   if (!Array.isArray(items) || items?.length === 0) {
     return { results: [], errors: [] };
-  }
-
-  if (signal?.aborted) {
-    throw new BatchAbortError(items, -1);
   }
 
   const results: R[] = [];
@@ -145,20 +151,12 @@ export async function workerBatcher<T, R>(
 
   // Process all batches maintaining constant number of active workers
   while (currentBatchIndex < batches.length || activeWorkers.size > 0) {
-    if (signal?.aborted) {
-      throw new BatchAbortError(
-        items.slice(currentBatchIndex * batchSize),
-        currentBatchIndex
-      );
-    }
-
     // Fill the worker pool up to the concurrency limit
     while (activeWorkers.size < concurrency && currentBatchIndex < batches.length) {
+      // Only check abort before starting new workers
       if (signal?.aborted) {
-        throw new BatchAbortError(
-          items.slice(currentBatchIndex * batchSize),
-          currentBatchIndex
-        );
+        // Instead of throwing, just break the loop
+        break;
       }
       
       const batchIndex = currentBatchIndex++;
@@ -194,6 +192,12 @@ export async function workerBatcher<T, R>(
     if (activeWorkers.size > 0) {
       await Promise.race(activeWorkers);
     }
+  }
+
+  // If aborted, add an error for the remaining unprocessed items
+  if (signal?.aborted && currentBatchIndex < batches.length) {
+    const remainingItems = items.slice(currentBatchIndex * batchSize);
+    errors.push(new BatchAbortError(remainingItems, currentBatchIndex));
   }
 
   return { results, errors };

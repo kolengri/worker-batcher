@@ -162,22 +162,40 @@ describe(workerBatcher.name, () => {
     test('should abort processing when signal is aborted', async () => {
         const items = Array.from({ length: 100 }, (_, i) => i); 
         const controller = new AbortController();
+        const completedBatches: number[] = [];
+        
         const processor = mock(async (batch: number[]) => {
-            await new Promise(resolve => setTimeout(resolve, 50))
+            await new Promise(resolve => setTimeout(resolve, 50));
             return batch;
         });
 
         const promise = workerBatcher(items, processor, {
             batchSize: 2,
             concurrency: 2,
-            signal: controller.signal
+            signal: controller.signal,
+            onBatchSuccess: (_, __, index) => {
+                completedBatches.push(index);
+            }
         });
 
-        await new Promise(resolve => setTimeout(resolve, 10));
+        // Allow time for processing to start
+        await new Promise(resolve => setTimeout(resolve, 75));
         
         controller.abort();
 
-        await expect(promise).rejects.toThrow('Operation was aborted');
+        // Wait for current batches to complete
+        const { results, errors } = await promise;
+
+        // Check for BatchAbortError in errors
+        expect(errors.some(error => error instanceof BatchAbortError)).toBe(true);
+        
+        // Verify not all items were processed after abort
+        expect(results.length).toBeLessThan(items.length);
+        
+        // Verify some batches completed but not all
+        expect(completedBatches.length).toBeGreaterThan(0);
+        const totalBatches = Math.ceil(items.length / 2); // batchSize = 2
+        expect(completedBatches.length).toBeLessThan(totalBatches);
     });
 
     test('should call onBatchSuccess with correct parameters', async () => {
@@ -230,21 +248,29 @@ describe(workerBatcher.name, () => {
         expect(batchErrors[0].error).toBeInstanceOf(BatchProcessingError);
     });
 
-      test('should throw BatchAbortError when aborted before start', async () => {
+    test('should handle abort before start', async () => {
         const controller = new AbortController();
         controller.abort();
         
         const items = [1, 2, 3, 4, 5];
-        const processor = async (batch: number[]) => batch;
+        const processor = mock(async (batch: number[]) => batch);
         
-        await expect(workerBatcher(items, processor, { 
+        const { results, errors } = await workerBatcher(items, processor, { 
             signal: controller.signal 
-        })).rejects.toThrow(BatchAbortError);
+        });
+
+        expect(results).toEqual([]);
+        expect(errors).toHaveLength(1);
+        expect(errors[0]).toBeInstanceOf(BatchAbortError);
+        expect(errors[0].batch).toEqual(items);
+        expect(errors[0].batchIndex).toBe(0);
+        expect(processor).not.toHaveBeenCalled();
     });
 
-    test('should throw BatchAbortError when aborted during processing', async () => {
+    test('should handle abort during processing', async () => {
         const controller = new AbortController();
         const items = Array.from({ length: 50 }, (_, i) => i);
+        const completedBatches: number[] = [];
         
         const processor = async (batch: number[]) => {
             await new Promise(resolve => setTimeout(resolve, 100));
@@ -254,36 +280,30 @@ describe(workerBatcher.name, () => {
         const processingPromise = workerBatcher(items, processor, {
             batchSize: 5,
             concurrency: 2,
-            signal: controller.signal
+            signal: controller.signal,
+            onBatchSuccess: (_, batch, index) => {
+                completedBatches.push(index);
+            }
         });
         
         // Abort after small delay to ensure processing has started
         setTimeout(() => controller.abort(), 150);
         
-        await expect(processingPromise).rejects.toThrow(BatchAbortError);
-    });
-
-    test('should include correct batch information in BatchAbortError', async () => {
-        const controller = new AbortController();
-        const items = [1, 2, 3, 4, 5];
+        const { results, errors } = await processingPromise;
         
-        try {
-            controller.abort();
-            await workerBatcher(items, async batch => batch, { 
-                signal: controller.signal 
-            });
-        } catch (error) {
-            expect(error).toBeInstanceOf(BatchAbortError);
-            if (error instanceof BatchAbortError) {
-                expect(error.batch).toEqual(items);
-                expect(error.batchIndex).toBe(-1);
-                expect(error.message).toBe('Operation was aborted');
-                expect(error.originalError.message).toBe('AbortError');
-            }
-        }
+        // Verify we have some results
+        expect(results.length).toBeGreaterThan(0);
+        expect(results.length).toBeLessThan(items.length);
+        
+        // Verify we have BatchAbortError
+        expect(errors.some(error => error instanceof BatchAbortError)).toBe(true);
+        
+        // Verify some batches completed
+        expect(completedBatches.length).toBeGreaterThan(0);
+        expect(Math.max(...completedBatches)).toBeLessThan(items.length / 5);
     });
 
-    test('should properly cleanup resources when aborted', async () => {
+    test('properly cleanup resources when aborted', async () => {
         const controller = new AbortController();
         const items = Array.from({ length: 100 }, (_, i) => i);
         const completedBatches: number[] = [];
@@ -304,11 +324,156 @@ describe(workerBatcher.name, () => {
         
         setTimeout(() => controller.abort(), 100);
         
-        await expect(processingPromise).rejects.toThrow(BatchAbortError);
-        // Ensure we don't process any more batches after abort
+        const { errors } = await processingPromise;
+        
+        // Check for BatchAbortError
+        expect(errors.some(error => error instanceof BatchAbortError)).toBe(true);
+        
+        // Wait to ensure no new batches are processed
         await new Promise(resolve => setTimeout(resolve, 200));
         
         const maxCompletedBatch = Math.max(...completedBatches);
         expect(maxCompletedBatch).toBeLessThan(items.length / 10);
+    });
+
+    test('processes items in batches', async () => {
+        const items = [1, 2, 3, 4, 5, 6];
+        const { results, errors } = await workerBatcher(
+            items,
+            async (batch) => batch.map(x => x * 2),
+            { batchSize: 2 }
+        );
+
+        expect(results).toEqual([2, 4, 6, 8, 10, 12]);
+        expect(errors).toHaveLength(0);
+    });
+
+    test('handles empty array', async () => {
+        const { results, errors } = await workerBatcher(
+            [],
+            async (batch) => batch,
+        );
+
+        expect(results).toEqual([]);
+        expect(errors).toHaveLength(0);
+    });
+
+    test('respects batch size', async () => {
+        const processor = mock(async (batch) => batch);
+        
+        await workerBatcher([1, 2, 3, 4, 5], processor, { batchSize: 2 });
+        
+        expect(processor).toHaveBeenCalledTimes(3);
+        expect(processor).toHaveBeenNthCalledWith(1, [1, 2]);
+        expect(processor).toHaveBeenNthCalledWith(2, [3, 4]);
+        expect(processor).toHaveBeenNthCalledWith(3, [5]);
+    });
+
+    test('handles batch processing errors', async () => {
+        const onBatchError = mock(() => {});
+        const error = new Error('Test error');
+        
+        const { results, errors } = await workerBatcher(
+            [1, 2, 3, 4],
+            async (batch) => {
+                if (batch.includes(3)) throw error;
+                return batch.map(x => x * 2);
+            },
+            {
+                batchSize: 2,
+                onBatchError,
+            }
+        );
+
+        expect(results).toEqual([2, 4]);
+        expect(errors).toHaveLength(1);
+        expect(errors[0]).toBeInstanceOf(BatchProcessingError);
+        expect(errors[0].originalError).toBe(error);
+        expect(onBatchError).toHaveBeenCalledWith(errors[0], [3, 4], 1);
+    });
+
+    test('reports progress', async () => {
+        const onProgress = mock(() => {});
+        
+        await workerBatcher(
+            [1, 2, 3, 4],
+            async (batch) => batch.map(x => x * 2),
+            {
+                batchSize: 2,
+                onProgress,
+            }
+        );
+
+        expect(onProgress).toHaveBeenCalledTimes(2);
+        expect(onProgress).toHaveBeenNthCalledWith(1, { completed: 1, total: 2, percent: 50 });
+        expect(onProgress).toHaveBeenNthCalledWith(2, { completed: 2, total: 2, percent: 100 });
+    });
+
+    test('handles abort signal - returns partial results', async () => {
+        const controller = new AbortController();
+        const onBatchSuccess = mock(() => {});
+        const onBatchError = mock(() => {});
+        
+        const processor = async (batch: number[]) => {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            return batch.map(x => x * 2);
+        };
+
+        const batcherPromise = workerBatcher(
+            [1, 2, 3, 4, 5, 6],
+            processor,
+            {
+                batchSize: 2,
+                concurrency: 2,
+                signal: controller.signal,
+                onBatchSuccess,
+                onBatchError,
+            }
+        );
+
+        // Allow first batch to start processing
+        await new Promise(resolve => setTimeout(resolve, 50));
+        
+        // Abort while first batch is processing
+        controller.abort();
+        
+        // Wait for current batches to complete
+        const { results, errors } = await batcherPromise;
+
+        // Should have results from completed batches
+        expect(results).toEqual([2, 4]);
+        
+        // Should have BatchAbortError for remaining items
+        expect(errors).toHaveLength(1);
+        expect(errors[0]).toBeInstanceOf(BatchAbortError);
+        expect(errors[0].batch).toEqual([5, 6]);
+        expect(errors[0].batchIndex).toBe(2);
+        
+        // Verify callbacks were called correctly
+        expect(onBatchSuccess).toHaveBeenCalledWith([2, 4], [1, 2], 0);
+        expect(onBatchError).toHaveBeenCalledWith(errors[0], [5, 6], 2);
+    });
+
+    test('respects concurrency limit', async () => {
+        const activeProcessors = new Set<number>();
+        let maxConcurrent = 0;
+        
+        await workerBatcher(
+            [1, 2, 3, 4, 5, 6],
+            async (batch) => {
+                const id = Math.random();
+                activeProcessors.add(id);
+                maxConcurrent = Math.max(maxConcurrent, activeProcessors.size);
+                await new Promise(resolve => setTimeout(resolve, 10));
+                activeProcessors.delete(id);
+                return batch.map(x => x * 2);
+            },
+            {
+                batchSize: 1,
+                concurrency: 2
+            }
+        );
+
+        expect(maxConcurrent).toBe(2);
     });
 });

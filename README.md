@@ -108,31 +108,31 @@ if (errors.length > 0) {
 ```typescript
 const controller = new AbortController();
 
-try {
-  const { results } = await workerBatcher(
-    items,
-    async (batch) => {
-      return batch.map(x => x * 2);
+const { results, errors } = await workerBatcher(
+  items,
+  async (batch) => {
+    return batch.map(x => x * 2);
+  },
+  {
+    signal: controller.signal,
+    onBatchSuccess: (results, batch, index) => {
+      console.log(`Batch ${index} completed:`, results);
     },
-    {
-      signal: controller.signal,
-      onBatchError: (error) => {
-        if (error instanceof BatchAbortError) {
-          console.log('Batch processing was cancelled');
-        }
+    onBatchError: (error, batch, index) => {
+      if (error instanceof BatchAbortError) {
+        console.log('Remaining items will not be processed');
       }
     }
-  );
-} catch (error) {
-  if (error instanceof BatchAbortError) {
-    console.log('Operation was cancelled');
-  } else {
-    console.error('Unexpected error:', error);
   }
-}
+);
 
-// Cancel processing
+// Cancel processing of new batches
+// Current batches will complete
 controller.abort();
+
+// Check results after cancellation
+console.log('Completed results:', results);  // Contains results from completed batches
+console.log('Errors:', errors);  // Contains BatchAbortError for unprocessed items
 ```
 
 ## TypeScript Support
@@ -176,13 +176,15 @@ interface BatchOptions<T, R> {
   // Maximum number of concurrent batch operations (default: 5)
   concurrency?: number;
   
-  // AbortSignal for cancelling the operation
+  // AbortSignal for graceful cancellation
+  // When aborted, current batches will complete
+  // and function will return partial results
   signal?: AbortSignal;
   
   // Called after each successful batch
   onBatchSuccess?: (results: R[], batch: T[], index: number) => void;
   
-  // Called when a batch fails
+  // Called when a batch fails or when remaining items are aborted
   onBatchError?: (error: Error, batch: T[], index: number) => void;
   
   // Called to report progress
@@ -198,8 +200,8 @@ interface BatchOptions<T, R> {
 
 ```typescript
 Promise<{
-  results: R[];          // Array of successfully processed items
-  errors: Error[];       // Array of errors from failed batches
+  results: R[];     // Array of successfully processed items (including partial results if aborted)
+  errors: Error[];  // Array of errors from failed batches and BatchAbortError for remaining items if aborted
 }>
 ```
 
@@ -224,40 +226,41 @@ class BatchProcessingError extends Error {
 
 ### BatchAbortError 
 
-Thrown when the operation is cancelled via AbortSignal:
+Added to errors array when operation is cancelled via AbortSignal:
 
 ```typescript
-class BatchAbortError extends Error {
-  constructor(message: string = 'Operation was aborted') {
-    super(message);
-  }
+class BatchAbortError extends BatchProcessingError {
+  constructor(
+    batch: unknown[],
+    batchIndex: number
+  )
 }
 ```
 
 Example handling both error types:
 
 ```typescript
-try {
-  const { results, errors } = await workerBatcher(
-    items,
-    async (batch) => {
-      return batch.map(x => x * 2);
-    },
-    {
-      signal: controller.signal,
-      onBatchError: (error, batch, index) => {
-        if (error instanceof BatchProcessingError) {
-          console.error(`Batch ${index} failed:`, error.originalError.message);
-        } else if (error instanceof BatchAbortError) {
-          console.log('Processing was cancelled');
-        }
+const { results, errors } = await workerBatcher(
+  items,
+  async (batch) => {
+    return batch.map(x => x * 2);
+  },
+  {
+    signal: controller.signal,
+    onBatchError: (error, batch, index) => {
+      if (error instanceof BatchProcessingError) {
+        console.error(`Batch ${index} failed:`, error.originalError.message);
+      } else if (error instanceof BatchAbortError) {
+        console.log('Remaining items will not be processed');
       }
     }
-  );
-} catch (error) {
-  if (error instanceof BatchAbortError) {
-    console.log('Operation was cancelled');
   }
+);
+
+// Check for abort
+const abortError = errors.find(error => error instanceof BatchAbortError);
+if (abortError) {
+  console.log('Processing was cancelled, but partial results are available');
 }
 ```
 
