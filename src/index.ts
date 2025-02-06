@@ -123,7 +123,13 @@ export async function workerBatcher<T, R>(
     signal
   } = options;
 
-  if (!Array.isArray(items) || items?.length === 0) {
+  if (signal?.aborted) {
+    const remainingItems = items;
+    onBatchError?.(new BatchAbortError(remainingItems, 0), remainingItems, 0);
+    return { results: [], errors: [new BatchAbortError(remainingItems, 0)] };
+  }
+
+  if (!Array.isArray(items) || items.length === 0) {
     return { results: [], errors: [] };
   }
 
@@ -149,55 +155,62 @@ export async function workerBatcher<T, R>(
     }
   };
 
-  // Process all batches maintaining constant number of active workers
-  while (currentBatchIndex < batches.length || activeWorkers.size > 0) {
-    // Fill the worker pool up to the concurrency limit
-    while (activeWorkers.size < concurrency && currentBatchIndex < batches.length) {
-      // Only check abort before starting new workers
+  try {
+    // Process all batches maintaining constant number of active workers
+    while (currentBatchIndex < batches.length || activeWorkers.size > 0) {
       if (signal?.aborted) {
-        // Instead of throwing, just break the loop
-        break;
+        const remainingBatches = batches.slice(currentBatchIndex).flat();
+        throw new BatchAbortError(remainingBatches, currentBatchIndex);
       }
       
-      const batchIndex = currentBatchIndex++;
-      const currentBatch = batches[batchIndex];
-
-      const worker = (async () => {
-        try {
-          const batchResults = await processor(currentBatch);
-          results.push(...batchResults);
-          completedBatches++;
-          updateProgress();
-          onBatchSuccess?.(batchResults, currentBatch, batchIndex);
-        } catch (error) {
-          const batchError = new BatchProcessingError(
-            `Failed to process batch ${batchIndex}`,
-            currentBatch,
-            batchIndex,
-            error instanceof Error ? error : new Error(String(error))
-          );
-          errors.push(batchError);
-          onBatchError?.(batchError, currentBatch, batchIndex);
+      // Fill the worker pool up to the concurrency limit
+      while (activeWorkers.size < concurrency && currentBatchIndex < batches.length) {
+        if (signal?.aborted) {
+          const remainingBatches = batches.slice(currentBatchIndex).flat();
+          throw new BatchAbortError(remainingBatches, currentBatchIndex);
         }
-      })();
+        
+        const batchIndex = currentBatchIndex++;
+        const currentBatch = batches[batchIndex];
 
-      activeWorkers.add(worker);
-      // Clean up completed worker
-      void worker.then(() => {
-        activeWorkers.delete(worker);
-      });
+        const worker = (async () => {
+          try {
+            const batchResults = await processor(currentBatch);
+            results.push(...batchResults);
+            completedBatches++;
+            updateProgress();
+            onBatchSuccess?.(batchResults, currentBatch, batchIndex);
+          } catch (error) {
+            const batchError = new BatchProcessingError(
+              `Failed to process batch ${batchIndex}`,
+              currentBatch,
+              batchIndex,
+              error instanceof Error ? error : new Error(String(error))
+            );
+            errors.push(batchError);
+            onBatchError?.(batchError, currentBatch, batchIndex);
+          }
+        })();
+
+        activeWorkers.add(worker);
+        // Clean up completed worker
+        void worker.then(() => {
+          activeWorkers.delete(worker);
+        });
+      }
+
+      // Wait for at least one worker to complete before next iteration
+      if (activeWorkers.size > 0) {
+        await Promise.race(activeWorkers);
+      }
     }
-
-    // Wait for at least one worker to complete before next iteration
-    if (activeWorkers.size > 0) {
-      await Promise.race(activeWorkers);
+  } catch (error) {
+    if (error instanceof BatchAbortError) {
+      errors.push(error);
+      onBatchError?.(error, error.batch as T[], error.batchIndex);
+    } else {
+      errors.push(new BatchProcessingError('Unknown error', [], 0, error instanceof Error ? error : new Error(String(error))));
     }
-  }
-
-  // If aborted, add an error for the remaining unprocessed items
-  if (signal?.aborted && currentBatchIndex < batches.length) {
-    const remainingItems = items.slice(currentBatchIndex * batchSize);
-    errors.push(new BatchAbortError(remainingItems, currentBatchIndex));
   }
 
   return { results, errors };
