@@ -186,7 +186,7 @@ describe(workerBatcher.name, () => {
 
         // Wait for processing to start
         await processingStarted;
-        
+
         await new Promise(resolve => setTimeout(resolve, 20));
         
         // Abort after processing has started
@@ -195,8 +195,8 @@ describe(workerBatcher.name, () => {
         const { results, errors } = await promise;
 
         // Check for BatchAbortError in errors
-        const abortError = errors.find(error => error instanceof BatchAbortError);
-        expect(abortError).toBeDefined();
+        const abortError = errors.some(error => error instanceof BatchAbortError);
+        expect(abortError).toBeTrue()
         
         // Verify some items were processed but not all
         expect(results.length).toBeGreaterThan(0);
