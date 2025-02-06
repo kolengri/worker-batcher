@@ -115,12 +115,19 @@ try {
       return batch.map(x => x * 2);
     },
     {
-      signal: controller.signal
+      signal: controller.signal,
+      onBatchError: (error) => {
+        if (error instanceof BatchAbortError) {
+          console.log('Batch processing was cancelled');
+        }
+      }
     }
   );
 } catch (error) {
-  if (error.message === 'Operation was aborted') {
-    console.log('Processing was cancelled');
+  if (error instanceof BatchAbortError) {
+    console.log('Operation was cancelled');
+  } else {
+    console.error('Unexpected error:', error);
   }
 }
 
@@ -198,7 +205,11 @@ Promise<{
 
 ## Error Handling
 
-The library provides a `BatchProcessingError` class for detailed error information:
+The library provides error classes for detailed error information:
+
+### BatchProcessingError
+
+Used when a batch fails during processing:
 
 ```typescript
 class BatchProcessingError extends Error {
@@ -208,6 +219,45 @@ class BatchProcessingError extends Error {
     public readonly batchIndex: number,
     public readonly originalError: Error
   )
+}
+```
+
+### BatchAbortError 
+
+Thrown when the operation is cancelled via AbortSignal:
+
+```typescript
+class BatchAbortError extends Error {
+  constructor(message: string = 'Operation was aborted') {
+    super(message);
+  }
+}
+```
+
+Example handling both error types:
+
+```typescript
+try {
+  const { results, errors } = await workerBatcher(
+    items,
+    async (batch) => {
+      return batch.map(x => x * 2);
+    },
+    {
+      signal: controller.signal,
+      onBatchError: (error, batch, index) => {
+        if (error instanceof BatchProcessingError) {
+          console.error(`Batch ${index} failed:`, error.originalError.message);
+        } else if (error instanceof BatchAbortError) {
+          console.log('Processing was cancelled');
+        }
+      }
+    }
+  );
+} catch (error) {
+  if (error instanceof BatchAbortError) {
+    console.log('Operation was cancelled');
+  }
 }
 ```
 
