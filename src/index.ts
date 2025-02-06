@@ -33,6 +33,22 @@ export class BatchProcessingError extends Error {
 }
 
 /**
+ * Error class specifically for abort operations
+ * Extends BatchProcessingError to maintain consistent error handling
+ */
+export class BatchAbortError extends BatchProcessingError {
+  constructor(batch: unknown[], batchIndex: number) {
+    super(
+      'Operation was aborted',
+      batch,
+      batchIndex,
+      new Error('AbortError')
+    );
+    this.name = 'BatchAbortError';
+  }
+}
+
+/**
  * Processes an array of items in batches with controlled concurrency using a worker pool pattern.
  * 
  * How it works:
@@ -80,7 +96,7 @@ export class BatchProcessingError extends Error {
  *          - results: Array of all successfully processed items
  *          - errors: Array of BatchProcessingError objects for failed batches
  * 
- * @throws Error if the operation is aborted via AbortSignal
+ * @throws BatchAbortError if the operation is aborted via AbortSignal
  * @throws BatchProcessingError for individual batch failures (collected in errors array)
  */
 export async function workerBatcher<T, R>(
@@ -102,7 +118,7 @@ export async function workerBatcher<T, R>(
   }
 
   if (signal?.aborted) {
-    throw new Error('Operation was aborted');
+    throw new BatchAbortError(items, -1);
   }
 
   const results: R[] = [];
@@ -130,11 +146,21 @@ export async function workerBatcher<T, R>(
   // Process all batches maintaining constant number of active workers
   while (currentBatchIndex < batches.length || activeWorkers.size > 0) {
     if (signal?.aborted) {
-      throw new Error('Operation was aborted');
+      throw new BatchAbortError(
+        items.slice(currentBatchIndex * batchSize),
+        currentBatchIndex
+      );
     }
 
     // Fill the worker pool up to the concurrency limit
     while (activeWorkers.size < concurrency && currentBatchIndex < batches.length) {
+      if (signal?.aborted) {
+        throw new BatchAbortError(
+          items.slice(currentBatchIndex * batchSize),
+          currentBatchIndex
+        );
+      }
+      
       const batchIndex = currentBatchIndex++;
       const currentBatch = batches[batchIndex];
 

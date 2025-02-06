@@ -1,7 +1,7 @@
 import { expect, test, describe, mock } from "bun:test";
-import { workerBatcher, BatchProcessingError } from '../index';
+import { workerBatcher, BatchProcessingError, BatchAbortError } from '../index';
 
-describe('workerBatcher', () => {
+describe(workerBatcher.name, () => {
     // Helper function to create a delayed processor
     const createDelayedProcessor = (delay: number) =>
         async (items: number[]): Promise<number[]> => {
@@ -228,5 +228,87 @@ describe('workerBatcher', () => {
         expect(batchErrors[0].batch).toEqual([3, 4]);
         expect(batchErrors[0].index).toBe(1);
         expect(batchErrors[0].error).toBeInstanceOf(BatchProcessingError);
+    });
+
+      test('should throw BatchAbortError when aborted before start', async () => {
+        const controller = new AbortController();
+        controller.abort();
+        
+        const items = [1, 2, 3, 4, 5];
+        const processor = async (batch: number[]) => batch;
+        
+        await expect(workerBatcher(items, processor, { 
+            signal: controller.signal 
+        })).rejects.toThrow(BatchAbortError);
+    });
+
+    test('should throw BatchAbortError when aborted during processing', async () => {
+        const controller = new AbortController();
+        const items = Array.from({ length: 50 }, (_, i) => i);
+        
+        const processor = async (batch: number[]) => {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            return batch;
+        };
+        
+        const processingPromise = workerBatcher(items, processor, {
+            batchSize: 5,
+            concurrency: 2,
+            signal: controller.signal
+        });
+        
+        // Abort after small delay to ensure processing has started
+        setTimeout(() => controller.abort(), 150);
+        
+        await expect(processingPromise).rejects.toThrow(BatchAbortError);
+    });
+
+    test('should include correct batch information in BatchAbortError', async () => {
+        const controller = new AbortController();
+        const items = [1, 2, 3, 4, 5];
+        
+        try {
+            controller.abort();
+            await workerBatcher(items, async batch => batch, { 
+                signal: controller.signal 
+            });
+        } catch (error) {
+            expect(error).toBeInstanceOf(BatchAbortError);
+            if (error instanceof BatchAbortError) {
+                expect(error.batch).toEqual(items);
+                expect(error.batchIndex).toBe(-1);
+                expect(error.message).toBe('Operation was aborted');
+                expect(error.originalError.message).toBe('AbortError');
+            }
+        }
+    });
+
+    test('should properly cleanup resources when aborted', async () => {
+        const controller = new AbortController();
+        const items = Array.from({ length: 100 }, (_, i) => i);
+        const completedBatches: number[] = [];
+        
+        const processor = async (batch: number[]) => {
+            await new Promise(resolve => setTimeout(resolve, 50));
+            return batch;
+        };
+        
+        const processingPromise = workerBatcher(items, processor, {
+            batchSize: 10,
+            concurrency: 3,
+            signal: controller.signal,
+            onBatchSuccess: (_, __, batchIndex) => {
+                completedBatches.push(batchIndex);
+            }
+        });
+        
+        setTimeout(() => controller.abort(), 100);
+        
+        await expect(processingPromise).rejects.toThrow(BatchAbortError);
+        // Ensure we don't process any more batches after abort
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
+        const maxCompletedBatch = Math.max(...completedBatches);
+        expect(maxCompletedBatch).toBeLessThan(items.length / 10);
     });
 });
