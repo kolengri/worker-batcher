@@ -1,6 +1,13 @@
 # Worker Batcher
 
-A powerful utility for parallel array processing with controlled concurrency and batch size.
+A powerful utility for parallel array processing with controlled concurrency and batch size. Perfect for scenarios like:
+
+- Making parallel API requests without overloading the server by controlling batch size and concurrency
+- Processing large datasets in chunks while maintaining optimal performance
+- Fetching data for multiple users/items simultaneously with rate limiting
+- Uploading multiple files in parallel with progress tracking
+
+For example, when fetching data for 1000 users, instead of making 1000 simultaneous API calls that could overwhelm the server, you can process them in batches of 10 with max 3 concurrent batches.
 
 [![NPM](https://img.shields.io/npm/v/worker-batcher.svg)](https://www.npmjs.com/package/worker-batcher)
 [![JavaScript Style Guide](https://img.shields.io/badge/code_style-standard-brightgreen.svg)](https://standardjs.com)
