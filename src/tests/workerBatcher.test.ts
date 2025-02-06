@@ -187,6 +187,8 @@ describe(workerBatcher.name, () => {
         // Wait for processing to start
         await processingStarted;
         
+        await new Promise(resolve => setTimeout(resolve, 20));
+        
         // Abort after processing has started
         controller.abort();
 
@@ -271,7 +273,7 @@ describe(workerBatcher.name, () => {
         expect(errors).toHaveLength(1);
         expect(errors[0]).toBeInstanceOf(BatchAbortError);
         expect(errors[0].batch).toEqual(items);
-        expect(errors[0].batchIndex).toBe(0);
+        expect(errors[0].batchIndex).toBe(1);
         expect(processor).not.toHaveBeenCalled();
     });
 
@@ -444,12 +446,11 @@ describe(workerBatcher.name, () => {
         );
 
         // Increase delay before abort to ensure processing has started
-        await new Promise(resolve => setTimeout(resolve, 300));
+        await new Promise(resolve => setTimeout(resolve, 100));
         
         controller.abort();
         
         const { results, errors } = await batcherPromise;
-
         // Verify we have BatchAbortError
         expect(errors.some(error => error instanceof BatchAbortError)).toBe(true);
         

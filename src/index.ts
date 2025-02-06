@@ -123,12 +123,6 @@ export async function workerBatcher<T, R>(
     signal
   } = options;
 
-  if (signal?.aborted) {
-    const remainingItems = items;
-    onBatchError?.(new BatchAbortError(remainingItems, 0), remainingItems, 0);
-    return { results: [], errors: [new BatchAbortError(remainingItems, 0)] };
-  }
-
   if (!Array.isArray(items) || items.length === 0) {
     return { results: [], errors: [] };
   }
@@ -136,6 +130,7 @@ export async function workerBatcher<T, R>(
   const results: R[] = [];
   const errors: BatchProcessingError[] = [];
   const batches: T[][] = [];
+
 
   // Split items into batches
   for (let i = 0; i < items.length; i += batchSize) {
@@ -146,6 +141,15 @@ export async function workerBatcher<T, R>(
   let completedBatches = 0;
   const activeWorkers = new Set<Promise<void>>();
 
+  const throwAbortErrorInCase = () => {
+    if (signal?.aborted) {
+      const abortError = new BatchAbortError(batches.flat(), currentBatchIndex);
+      onBatchError?.(abortError, batches.flat(), currentBatchIndex);
+      errors.push(abortError);
+      throw abortError;
+    }
+  };
+
   const updateProgress = () => {
     if (onProgress) {
       const completed = completedBatches;
@@ -155,63 +159,71 @@ export async function workerBatcher<T, R>(
     }
   };
 
-  try {
+
+
     // Process all batches maintaining constant number of active workers
+  try {
     while (currentBatchIndex < batches.length || activeWorkers.size > 0) {
-      if (signal?.aborted) {
-        const remainingBatches = batches.slice(currentBatchIndex).flat();
-        throw new BatchAbortError(remainingBatches, currentBatchIndex);
-      }
-      
       // Fill the worker pool up to the concurrency limit
       while (activeWorkers.size < concurrency && currentBatchIndex < batches.length) {
-        if (signal?.aborted) {
-          const remainingBatches = batches.slice(currentBatchIndex).flat();
-          throw new BatchAbortError(remainingBatches, currentBatchIndex);
-        }
-        
         const batchIndex = currentBatchIndex++;
         const currentBatch = batches[batchIndex];
-
+        throwAbortErrorInCase();
+  
         const worker = (async () => {
           try {
+          
+            throwAbortErrorInCase();
             const batchResults = await processor(currentBatch);
+            throwAbortErrorInCase();
+            
             results.push(...batchResults);
             completedBatches++;
             updateProgress();
             onBatchSuccess?.(batchResults, currentBatch, batchIndex);
           } catch (error) {
-            const batchError = new BatchProcessingError(
-              `Failed to process batch ${batchIndex}`,
-              currentBatch,
-              batchIndex,
-              error instanceof Error ? error : new Error(String(error))
-            );
-            errors.push(batchError);
-            onBatchError?.(batchError, currentBatch, batchIndex);
+            if (error instanceof BatchAbortError) {
+              errors.push(error);
+              onBatchError?.(error, currentBatch, batchIndex);
+            } else {
+              const batchError = new BatchProcessingError(
+                `Failed to process batch ${batchIndex}`,
+                currentBatch,
+                batchIndex,
+                error instanceof Error ? error : new Error(String(error))
+              );
+              errors.push(batchError);
+              onBatchError?.(batchError, currentBatch, batchIndex);
+            }
           }
         })();
-
+  
         activeWorkers.add(worker);
-        // Clean up completed worker
         void worker.then(() => {
           activeWorkers.delete(worker);
         });
       }
-
+  
       // Wait for at least one worker to complete before next iteration
       if (activeWorkers.size > 0) {
         await Promise.race(activeWorkers);
       }
+  
+      throwAbortErrorInCase();
     }
   } catch (error) {
-    if (error instanceof BatchAbortError) {
-      errors.push(error);
-      onBatchError?.(error, error.batch as T[], error.batchIndex);
-    } else {
-      errors.push(new BatchProcessingError('Unknown error', [], 0, error instanceof Error ? error : new Error(String(error))));
+    if (!(error instanceof BatchAbortError)) {
+      const unexpectedError = new BatchProcessingError(
+        'Unknown error', 
+        [], 
+        0, 
+        error instanceof Error ? error : new Error(String(error))
+      );
+      errors.push(unexpectedError);
+      onBatchError?.(unexpectedError, [], 0);
     }
   }
+  
 
   return { results, errors };
 }
