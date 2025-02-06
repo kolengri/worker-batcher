@@ -93,8 +93,10 @@ class BatchProcessor<T, R> {
     const { onBatchError } = this.options;
 
     if (error instanceof BatchAbortError) {
-      this.errors.push(error);
-      onBatchError?.(error, batch, batchIndex);
+      if (!this.errors.some((e) => e instanceof BatchAbortError)) {
+        this.errors.push(error);
+        onBatchError?.(error, batch, batchIndex);
+      }
       return;
     }
 
