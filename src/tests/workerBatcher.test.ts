@@ -504,4 +504,38 @@ describe(workerBatcher.name, () => {
     // With stopOnError enabled, processor should have been called only 2 times
     expect(processor).toHaveBeenCalledTimes(2);
   });
+
+  test('should not block main thread execution', async () => {
+    let mainThreadCounter = 0;
+
+    // Interval to simulate main thread activity
+    const intervalId = setInterval(() => {
+      mainThreadCounter++;
+    }, 10);
+
+    // Processor simulating a delay in processing each batch
+    const processor = async (batch: number[]) => {
+      // Simulate async work with a 100ms delay
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      return batch;
+    };
+
+    // Create an array of 10 items which will be processed in 5 batches (batchSize = 2)
+    const items = Array.from({ length: 10 }, (_, i) => i + 1);
+
+    // Execute workerBatcher with 2 concurrent processing tasks
+    const { results, errors } = await workerBatcher(items, processor, {
+      batchSize: 2,
+      concurrency: 2,
+    });
+
+    // Clear the interval to stop the main thread counter
+    clearInterval(intervalId);
+
+    // If the main thread was blocked, mainThreadCounter would remain very low.
+    // We assert that it has been incremented sufficiently.
+    expect(mainThreadCounter).toBeGreaterThan(10);
+    expect(results).toEqual(items);
+    expect(errors).toEqual([]);
+  });
 });

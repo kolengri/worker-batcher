@@ -48,11 +48,11 @@ const items = [1, 2, 3, 4, 5, 6];
 const { results, errors } = await workerBatcher(
   items,
   async (batch) => {
-    return batch.map(x => x * 2);
+    return batch.map((x) => x * 2);
   },
   {
     batchSize: 2,
-    concurrency: 3
+    concurrency: 3,
   }
 );
 
@@ -65,7 +65,7 @@ console.log(results); // [2, 4, 6, 8, 10, 12]
 const { results } = await workerBatcher(
   items,
   async (batch) => {
-    return batch.map(x => x * 2);
+    return batch.map((x) => x * 2);
   },
   {
     batchSize: 2,
@@ -74,7 +74,7 @@ const { results } = await workerBatcher(
     },
     onBatchSuccess: (results, batch, index) => {
       console.log(`Batch ${index} processed:`, results);
-    }
+    },
   }
 );
 ```
@@ -88,12 +88,12 @@ const { results, errors } = await workerBatcher(
     if (batch.includes(3)) {
       throw new Error('Invalid item');
     }
-    return batch.map(x => x * 2);
+    return batch.map((x) => x * 2);
   },
   {
     onBatchError: (error, batch, index) => {
       console.error(`Batch ${index} failed:`, error.message);
-    }
+    },
   }
 );
 
@@ -111,7 +111,7 @@ const controller = new AbortController();
 const { results, errors } = await workerBatcher(
   items,
   async (batch) => {
-    return batch.map(x => x * 2);
+    return batch.map((x) => x * 2);
   },
   {
     signal: controller.signal,
@@ -122,7 +122,7 @@ const { results, errors } = await workerBatcher(
       if (error instanceof BatchAbortError) {
         console.log('Remaining items will not be processed');
       }
-    }
+    },
   }
 );
 
@@ -131,8 +131,8 @@ const { results, errors } = await workerBatcher(
 controller.abort();
 
 // Check results after cancellation
-console.log('Completed results:', results);  // Contains results from completed batches
-console.log('Errors:', errors);  // Contains BatchAbortError for unprocessed items
+console.log('Completed results:', results); // Contains results from completed batches
+console.log('Errors:', errors); // Contains BatchAbortError for unprocessed items
 ```
 
 ## TypeScript Support
@@ -144,12 +144,12 @@ import { workerBatcher, BatchOptions } from 'worker-batcher';
 
 const options: BatchOptions<number, number> = {
   batchSize: 2,
-  concurrency: 3
+  concurrency: 3,
 };
 
 const { results, errors } = await workerBatcher(
   [1, 2, 3],
-  async (batch) => batch.map(x => x * 2),
+  async (batch) => batch.map((x) => x * 2),
   options
 );
 ```
@@ -172,27 +172,26 @@ Processes an array of items in batches with controlled concurrency.
 interface BatchOptions<T, R> {
   // Number of items to process in one batch (default: 10)
   batchSize?: number;
-  
+
   // Maximum number of concurrent batch operations (default: 5)
   concurrency?: number;
-  
+
+  // Whether to stop all processing when a batch fails (default: false)
+  stopOnError?: boolean;
+
   // AbortSignal for graceful cancellation
   // When aborted, current batches will complete
   // and function will return partial results
   signal?: AbortSignal;
-  
+
   // Called after each successful batch
   onBatchSuccess?: (results: R[], batch: T[], index: number) => void;
-  
+
   // Called when a batch fails or when remaining items are aborted
   onBatchError?: (error: Error, batch: T[], index: number) => void;
-  
+
   // Called to report progress
-  onProgress?: (progress: {
-    completed: number;
-    total: number;
-    percent: number;
-  }) => void;
+  onProgress?: (progress: { completed: number; total: number; percent: number }) => void;
 }
 ```
 
@@ -200,9 +199,9 @@ interface BatchOptions<T, R> {
 
 ```typescript
 Promise<{
-  results: R[];     // Array of successfully processed items (including partial results if aborted)
-  errors: Error[];  // Array of errors from failed batches and BatchAbortError for remaining items if aborted
-}>
+  results: R[]; // Array of successfully processed items (including partial results if aborted)
+  errors: Error[]; // Array of errors from failed batches and BatchAbortError for remaining items if aborted
+}>;
 ```
 
 ## Error Handling
@@ -224,16 +223,13 @@ class BatchProcessingError extends Error {
 }
 ```
 
-### BatchAbortError 
+### BatchAbortError
 
 Added to errors array when operation is cancelled via AbortSignal:
 
 ```typescript
 class BatchAbortError extends BatchProcessingError {
-  constructor(
-    batch: unknown[],
-    batchIndex: number
-  )
+  constructor(batch: unknown[], batchIndex: number);
 }
 ```
 
@@ -243,7 +239,7 @@ Example handling both error types:
 const { results, errors } = await workerBatcher(
   items,
   async (batch) => {
-    return batch.map(x => x * 2);
+    return batch.map((x) => x * 2);
   },
   {
     signal: controller.signal,
@@ -253,15 +249,39 @@ const { results, errors } = await workerBatcher(
       } else if (error instanceof BatchAbortError) {
         console.log('Remaining items will not be processed');
       }
-    }
+    },
   }
 );
 
 // Check for abort
-const abortError = errors.find(error => error instanceof BatchAbortError);
+const abortError = errors.find((error) => error instanceof BatchAbortError);
 if (abortError) {
   console.log('Processing was cancelled, but partial results are available');
 }
+```
+
+### Error Handling with stopOnError
+
+```typescript
+const { results, errors } = await workerBatcher(
+  items,
+  async (batch) => {
+    if (batch.includes(3)) {
+      throw new Error('Invalid item');
+    }
+    return batch.map((x) => x * 2);
+  },
+  {
+    stopOnError: true, // Processing will stop on first error
+    onBatchError: (error, batch, index) => {
+      console.error(`Batch ${index} failed:`, error.message);
+    },
+  }
+);
+
+// With stopOnError: true, only batches processed before the error will be in results
+console.log('Partial results:', results);
+console.log('Error that stopped processing:', errors[0]);
 ```
 
 ## Development
