@@ -474,4 +474,34 @@ describe(workerBatcher.name, () => {
 
     expect(maxConcurrent).toBe(2);
   });
+
+  test('should stop processing on first error when stopOnError is true', async () => {
+    const items = [1, 2, 3, 4, 5];
+    const expectedError = new Error('Stop error triggered');
+
+    // Processor: if a batch contains the number 3, throw an error; otherwise, multiply numbers by 2
+    const processor = mock(async (batch: number[]) => {
+      if (batch.includes(3)) {
+        throw expectedError;
+      }
+      return batch.map((x) => x * 2);
+    });
+
+    const { results, errors } = await workerBatcher(items, processor, {
+      batchSize: 2,
+      stopOnError: true,
+      concurrency: 1, // Sequential processing to ensure that processing stops immediately on error
+    });
+
+    // The first batch [1, 2] should be processed successfully as [2, 4]
+    expect(results).toEqual([2, 4]);
+    // The second batch [3, 4] should trigger an error so that processing stops
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toBeInstanceOf(BatchProcessingError);
+    expect(errors[0].batch).toEqual([3, 4]);
+    expect(errors[0].batchIndex).toBe(1);
+    expect(errors[0].originalError).toEqual(expectedError);
+    // With stopOnError enabled, processor should have been called only 2 times
+    expect(processor).toHaveBeenCalledTimes(2);
+  });
 });
