@@ -75,6 +75,17 @@
  * Configuration options for batch processing.
  * @template T The type of items to be processed
  * @template R The type of results returned after processing
+ * @property {number} [batchSize=10] - The number of items to process in each batch. Controls memory usage and processing granularity.
+ * @property {number} [concurrency=5] - The maximum number of concurrent batch operations. Higher values increase throughput but also resource usage.
+ * @property {boolean} [stopOnError=false] - If true, stops all processing when any batch fails. If false, continues processing other batches.
+ * @property {function} [onBatchSuccess] - Callback executed after each successful batch. Receives processed results, original batch items, and batch index.
+ *                                        Useful for real-time updates and progress tracking.
+ * @property {function} [onBatchError] - Callback executed when a batch fails. Receives error details, failed batch items, and batch index.
+ *                                      Enables custom error handling and logging.
+ * @property {function} [onProgress] - Callback for tracking overall progress. Receives object with completed count, total count, and percentage.
+ *                                    Perfect for updating UI progress indicators.
+ * @property {AbortSignal} [signal] - Standard AbortSignal for cancelling the entire operation. When aborted, gracefully stops processing
+ *                                   and returns partial results.
  */
 type BatchOptions<T, R> = {
   /** The number of items to process in each batch. Default is 10. */
@@ -281,7 +292,14 @@ class BatchProcessor<T, R> {
  * @template R The type of results returned after processing
  * @param {T[]} items - Array of items to process
  * @param {(batch: T[]) => Promise<R[]>} processor - Async function to process each batch
- * @param {BatchOptions<T, R>} options - Configuration options for batch processing
+ * @param {BatchOptions<T, R>} options - Configuration options for batch processing:
+ *   @param {number} [options.batchSize=10] - Number of items to process in each batch
+ *   @param {number} [options.concurrency=5] - Maximum number of concurrent batch operations
+ *   @param {boolean} [options.stopOnError=false] - Whether to stop all processing when a batch fails
+ *   @param {Function} [options.onBatchSuccess] - Callback after each successful batch, receives (results, batch, batchIndex)
+ *   @param {Function} [options.onBatchError] - Callback when a batch fails, receives (error, batch, batchIndex)
+ *   @param {Function} [options.onProgress] - Progress tracking callback, receives ({ completed, total, percent })
+ *   @param {AbortSignal} [options.signal] - AbortSignal for cancelling the operation
  *
  * @returns {Promise<{ results: R[]; errors: BatchProcessingError[] }>}
  *          Object containing processed results and any errors that occurred
@@ -298,10 +316,13 @@ class BatchProcessor<T, R> {
  *     return batch.map(n => n * 2);
  *   },
  *   {
- *     batchSize: 3,
- *     concurrency: 2,
+ *     batchSize: 3,         // Process 3 items at a time
+ *     concurrency: 2,       // Run 2 batches in parallel
+ *     stopOnError: false,   // Continue processing if a batch fails
  *     onProgress: ({ percent }) => console.log(`Progress: ${percent}%`),
- *     onBatchSuccess: (results) => console.log('Batch processed:', results)
+ *     onBatchSuccess: (results, batch, index) => console.log(`Batch ${index} processed:`, results),
+ *     onBatchError: (error, batch, index) => console.error(`Batch ${index} failed:`, error),
+ *     signal: abortController.signal // Optional abort signal
  *   }
  * );
  * ```
