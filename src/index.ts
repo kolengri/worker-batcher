@@ -127,7 +127,7 @@ class BatchProcessor<T, R> {
 
           this.activeWorkers.add(worker);
 
-          void worker.then(() => {
+          void worker.finally(() => {
             this.activeWorkers.delete(worker);
           });
         }
