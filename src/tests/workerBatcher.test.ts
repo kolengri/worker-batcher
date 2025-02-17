@@ -435,7 +435,7 @@ describe(workerBatcher.name, () => {
 
     controller.abort();
 
-    const { results, errors } = await batcherPromise;
+    const { errors } = await batcherPromise;
     // Verify we have BatchAbortError
     expect(errors.some((error) => error instanceof BatchAbortError)).toBe(true);
 
@@ -536,6 +536,59 @@ describe(workerBatcher.name, () => {
     // We assert that it has been incremented sufficiently.
     expect(mainThreadCounter).toBeGreaterThan(10);
     expect(results).toEqual(items);
+    expect(errors).toEqual([]);
+  });
+
+  test('should process all items in one batch when batchSize is Infinity', async () => {
+    const items = [1, 2, 3, 4, 5];
+    // Using a processor that doubles each number
+    const processor = mock(async (batch: number[]) => batch.map((x) => x * 2));
+
+    const { results, errors } = await workerBatcher(items, processor, {
+      batchSize: Infinity,
+    });
+
+    expect(results).toEqual([2, 4, 6, 8, 10]);
+    expect(errors).toEqual([]);
+    expect(processor).toHaveBeenCalledTimes(1);
+  });
+
+  test('should process all batches concurrently when concurrency is Infinity', async () => {
+    const items = [1, 2, 3, 4, 5, 6];
+    let currentConcurrent = 0;
+    let maxConcurrent = 0;
+
+    const processor = mock(async (batch: number[]) => {
+      // Increase number of concurrently running processors
+      currentConcurrent++;
+      maxConcurrent = Math.max(maxConcurrent, currentConcurrent);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      currentConcurrent--;
+      return batch;
+    });
+
+    const { results, errors } = await workerBatcher(items, processor, {
+      batchSize: 2,
+      concurrency: Infinity,
+    });
+
+    expect(results).toEqual(items);
+    expect(errors).toEqual([]);
+    // Total batches = 3, so maximum concurrency should be 3
+    expect(maxConcurrent).toEqual(Math.ceil(items.length / 2));
+  });
+
+  test('should work correctly with Infinity for both batchSize and concurrency', async () => {
+    const items = [10, 20, 30];
+    // Using a simple processor that doubles each number
+    const processor = async (batch: number[]) => batch.map((x) => x * 2);
+
+    const { results, errors } = await workerBatcher(items, processor, {
+      batchSize: Infinity,
+      concurrency: Infinity,
+    });
+
+    expect(results).toEqual([20, 40, 60]);
     expect(errors).toEqual([]);
   });
 });

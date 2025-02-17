@@ -125,8 +125,8 @@ export class BatchProcessingError extends Error {
  * Contains information about the batch that was being processed when abortion occurred.
  */
 export class BatchAbortError extends BatchProcessingError {
-  constructor(batch: unknown[], batchIndex: number) {
-    super('Operation was aborted', batch, batchIndex, new Error('AbortError'));
+  constructor(message: string, batch: unknown[], batchIndex: number) {
+    super(message, batch, batchIndex, new Error('AbortError'));
     this.name = 'BatchAbortError';
   }
 }
@@ -171,7 +171,7 @@ class BatchProcessor<T, R> {
     const { signal } = this.options;
     if (signal?.aborted) {
       const remainingItems = this.batches.slice(batchIndex).flat();
-      throw new BatchAbortError(remainingItems, batchIndex);
+      throw new BatchAbortError('Operation was aborted', remainingItems, batchIndex);
     }
   }
 
@@ -332,15 +332,53 @@ export async function workerBatcher<T, R>(
   processor: (batch: T[]) => Promise<R[]>,
   options: BatchOptions<T, R> = {}
 ): Promise<{ results: R[]; errors: BatchProcessingError[] }> {
-  const { batchSize = 10 } = options;
+  const {
+    batchSize = 10,
+    concurrency = 5,
+    signal,
+    onProgress,
+    onBatchSuccess,
+    onBatchError,
+    stopOnError = false,
+  } = options;
 
-  if (!Array.isArray(items) || items.length === 0) {
+  if (items.length === 0) {
     return { results: [], errors: [] };
   }
 
-  if (options.signal?.aborted) {
-    const abortError = new BatchAbortError(items, 0);
-    return { results: [], errors: [abortError] };
+  if (signal?.aborted) {
+    const error = new BatchAbortError('Processing aborted before start', items, 0);
+    return { results: [], errors: [error] };
+  }
+
+  const results: R[] = [];
+  const errors: BatchProcessingError[] = [];
+  let aborted = false;
+
+  if (!Number.isFinite(batchSize)) {
+    try {
+      onProgress?.({ completed: 0, total: items.length, percent: 0 });
+      const batchResults = await processor(items);
+      results.push(...batchResults);
+      if (onBatchSuccess) {
+        onBatchSuccess(batchResults, items, 0);
+      }
+    } catch (error) {
+      const batchError =
+        error instanceof BatchProcessingError
+          ? error
+          : new BatchProcessingError(
+              error as string,
+              items,
+              0,
+              error instanceof Error ? error : new Error(String(error))
+            );
+      errors.push(batchError);
+      if (onBatchError) {
+        onBatchError(batchError, items, 0);
+      }
+    }
+    return { results, errors };
   }
 
   const batches = Array.from({ length: Math.ceil(items.length / batchSize) }, (_, index) =>
